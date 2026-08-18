@@ -13,6 +13,10 @@ try:
 except Exception:
     Image = None
 
+os.environ["FLAGS_use_mkldnn"] = "0"
+
+os.environ["FLAGS_enable_pir_api"] = "0"
+
 try:
     from paddleocr import PaddleOCR
 except Exception:
