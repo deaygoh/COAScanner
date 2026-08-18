@@ -253,6 +253,9 @@ scanButton.addEventListener(
 // Live scanning loop
 // ========================================================
 
+let textBuffer = [];
+const BUFFER_SIZE = 5;  // Keep last 5 scan results
+
 async function scanLoop() {
 
     while (scannerRunning) {
@@ -267,14 +270,7 @@ async function scanLoop() {
 
         }
 
-
-        await new Promise(
-            resolve =>
-                setTimeout(
-                    resolve,
-                    500
-                )
-        );
+        await new Promise(resolve => setTimeout(resolve, 300));  // Scan every 300ms instead of 500ms
 
     }
 
@@ -450,27 +446,39 @@ async function scanFrame() {
             await response.json();
 
 
-        if (!data.success) {
-            return;
+        // Add detected text to buffer
+        if (data.detected_text) {
+            textBuffer.push(data.detected_text);
+            if (textBuffer.length > BUFFER_SIZE) {
+                textBuffer.shift();
+            }
         }
 
+        // Combine all buffered text
+        const combinedText = textBuffer.join(" ");
 
-        productKeyInput.value =
-            data.product_key;
+        // Search for a valid product key pattern
+        const keyPattern = /[A-Z0-9]{5}[-\s][A-Z0-9]{5}[-\s][A-Z0-9]{5}[-\s][A-Z0-9]{5}[-\s][A-Z0-9]{5}/;
+        const match = combinedText.match(keyPattern);
 
+        if (match) {
+            // Found a complete key - format and save it
+            const cleanedKey = match[0]
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, "")
+                .replace(/(.{5})/g, "$1-")
+                .slice(0, -1);  // Remove trailing dash
 
-        showMessage(
-            "COA detected.",
-            "success"
-        );
-
-
-        if (navigator.vibrate) {
-            navigator.vibrate(100);
+            productKeyInput.value = cleanedKey;
+            showMessage("COA detected.", "success");
+            
+            if (navigator.vibrate) {
+                navigator.vibrate(100);
+            }
+            
+            stopScanner();
+            textBuffer = [];  // Reset buffer after successful detection
         }
-
-
-        stopScanner();
 
     }
     catch (error) {

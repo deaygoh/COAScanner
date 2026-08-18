@@ -444,7 +444,8 @@ def api_scan():
 
         return jsonify({
             "success": True,
-            "product_key": product_key
+            "product_key": product_key,
+            "detected_text": full_text
         })
 
     except Exception as error:
