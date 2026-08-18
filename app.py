@@ -30,9 +30,9 @@ def get_ocr():
     if ocr is None and PaddleOCR is not None:
         try:
             ocr = PaddleOCR(
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False,
+                use_doc_orientation_classify=True,
+                use_doc_unwarping=True,
+                use_textline_orientation=True,
                 enable_mkldnn=False
             )
         except Exception as exc:
@@ -349,6 +349,19 @@ def api_assign_key():
         "product_key": result
     })
 
+def preprocess_image(image):
+    """Enhance contrast and sharpness for OCR"""
+    from PIL import ImageEnhance
+    
+    # Increase contrast
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(2.0)
+    
+    # Increase sharpness
+    enhancer = ImageEnhance.Sharpness(image)
+    image = enhancer.enhance(2.0)
+    
+    return image
 
 @app.route("/api/scan", methods=["POST"])
 def api_scan():
@@ -380,7 +393,7 @@ def api_scan():
         image_bytes = base64.b64decode(encoded)
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
+        image = preprocess_image(image)
         temp_file = "_coa_scan.jpg"
         image.save(temp_file)
 
