@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Windows COA Scanner</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/style.css"
+    >
+</head>
+
+<body>
+
+<div class="page">
+
+    <header>
+        <h1>Windows COA Scanner</h1>
+        <p>Scan and store Windows product keys by invoice.</p>
+    </header>
+
+
+    <section class="card">
+
+        <label for="invoice">
+            Invoice Number
+        </label>
+
+        <input
+            id="invoice"
+            type="text"
+            placeholder="Invoice number"
+            autocomplete="off"
+            autocorrect="off"
+            spellcheck="false"
+        >
+
+    </section>
+
+
+    <section class="card">
+
+        <h2>COA Scanner</h2>
+
+        <div class="scanner">
+
+            <video
+                id="camera"
+                autoplay
+                playsinline
+                muted>
+            </video>
+
+            <div class="scan-guide">
+                Place COA key here
+            </div>
+
+        </div>
+
+        <button
+            id="scanButton"
+            type="button">
+            Start Scanner
+        </button>
+
+    </section>
+
+
+    <section class="card">
+
+        <label for="productKey">
+            Product Key
+        </label>
+
+        <input
+            id="productKey"
+            type="text"
+            placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="characters"
+            spellcheck="false"
+        >
+
+        <button
+            id="saveButton"
+            type="button">
+            Save COA
+        </button>
+
+        <div
+            id="message"
+            class="message">
+        </div>
+
+    </section>
+
+
+    <section class="card summary">
+
+        <div>
+            <span
+                class="summary-number"
+                id="totalCount">
+                0
+            </span>
+
+            <span class="summary-label">
+                Total
+            </span>
+        </div>
+
+
+        <div>
+            <span
+                class="summary-number"
+                id="availableCount">
+                0
+            </span>
+
+            <span class="summary-label">
+                Available
+            </span>
+        </div>
+
+
+        <div>
+            <span
+                class="summary-number"
+                id="assignedCount">
+                0
+            </span>
+
+            <span class="summary-label">
+                Assigned
+            </span>
+        </div>
+
+    </section>
+
+
+    <section class="card">
+
+        <h2>COAs</h2>
+
+        <div id="emptyMessage">
+            Enter an invoice number to begin.
+        </div>
+
+        <div id="keyList"></div>
+
+    </section>
+
+</div>
+
+
+<script src="/static/script.js"></script>
+
+</body>
+
+</html>
