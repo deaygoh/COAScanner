@@ -116,6 +116,8 @@ async function startScanner() {
     if (scannerRunning)
         return;
 
+    candidateSequence = [];
+
     try {
 
         showMessage(
@@ -139,12 +141,44 @@ async function startScanner() {
                 video: {
                     facingMode: {
                         ideal: "environment"
+                    },
+                    width: {
+                        ideal: 1920
+                    },
+                    height: {
+                        ideal: 1080
                     }
                 },
 
                 audio: false
 
             });
+
+        // Keep close-up COA text in focus when the phone/browser exposes
+        // continuous autofocus controls.
+        const videoTrack = cameraStream.getVideoTracks()[0];
+        const capabilities = videoTrack.getCapabilities
+            ? videoTrack.getCapabilities()
+            : {};
+
+        if (
+            capabilities.focusMode &&
+            capabilities.focusMode.includes("continuous")
+        ) {
+            try {
+                await videoTrack.applyConstraints({
+                    advanced: [{
+                        focusMode: "continuous"
+                    }]
+                });
+            }
+            catch (focusError) {
+                console.debug(
+                    "Continuous autofocus unavailable:",
+                    focusError
+                );
+            }
+        }
 
 
         console.log(
@@ -253,8 +287,48 @@ scanButton.addEventListener(
 // Live scanning loop
 // ========================================================
 
-let textBuffer = [];
-const BUFFER_SIZE = 5;  // Keep last 5 scan results
+let candidateSequence = [];
+
+const keyGroupPattern =
+    /(?<![B-DF-HJ-NP-TV-Z2346789])([B-DF-HJ-NP-TV-Z2346789]{5})(?![B-DF-HJ-NP-TV-Z2346789])/g;
+
+
+function extractCandidateGroups(text) {
+
+    return Array.from(
+        text.toUpperCase().matchAll(keyGroupPattern),
+        match => match[1]
+    );
+
+}
+
+
+function mergeCandidateGroups(current, incoming) {
+
+    if (current.length === 0) {
+        return incoming.slice();
+    }
+
+    const maxOverlap = Math.min(
+        current.length,
+        incoming.length
+    );
+
+    for (let size = maxOverlap; size > 0; size--) {
+        const currentTail = current.slice(-size);
+        const incomingHead = incoming.slice(0, size);
+
+        if (currentTail.every(
+            (group, index) => group === incomingHead[index]
+        )) {
+            return current.concat(incoming.slice(size)).slice(-5);
+        }
+    }
+
+    // Do not combine unrelated fragments; start a fresh candidate chain.
+    return incoming.slice(-5);
+
+}
 
 async function scanLoop() {
 
@@ -270,7 +344,9 @@ async function scanLoop() {
 
         }
 
-        await new Promise(resolve => setTimeout(resolve, 300));  // Scan every 300ms instead of 500ms
+        // scanFrame waits for the server response, so only a short pause is
+        // needed to let the browser update between OCR requests.
+        await new Promise(resolve => setTimeout(resolve, 25));
 
     }
 
@@ -376,6 +452,7 @@ async function scanFrame() {
 
 
     // Resize crop for OCR
+    // Preserve fine character edges for the small, reflective COA print.
     const outputWidth = 1000;
 
     const scale =
@@ -418,7 +495,7 @@ async function scanFrame() {
     const image =
         scanCanvas.toDataURL(
             "image/jpeg",
-            0.8
+            0.7
         );
 
 
@@ -445,31 +522,13 @@ async function scanFrame() {
         const data =
             await response.json();
 
+        console.log("Backend response:", data);
 
-        // Add detected text to buffer
-        if (data.detected_text) {
-            textBuffer.push(data.detected_text);
-            if (textBuffer.length > BUFFER_SIZE) {
-                textBuffer.shift();
-            }
-        }
-
-        // Combine all buffered text
-        const combinedText = textBuffer.join(" ");
-
-        // Search for a valid product key pattern
-        const keyPattern = /[A-Z0-9]{5}[-\s][A-Z0-9]{5}[-\s][A-Z0-9]{5}[-\s][A-Z0-9]{5}[-\s][A-Z0-9]{5}/;
-        const match = combinedText.match(keyPattern);
-
-        if (match) {
-            // Found a complete key - format and save it
-            const cleanedKey = match[0]
-                .toUpperCase()
-                .replace(/[^A-Z0-9]/g, "")
-                .replace(/(.{5})/g, "$1-")
-                .slice(0, -1);  // Remove trailing dash
-
-            productKeyInput.value = cleanedKey;
+        // If backend found a key, use it immediately
+        if (data.success && data.product_key) {
+            console.log("Setting product key to:", data.product_key);
+            productKeyInput.value = data.product_key;
+            console.log("Input value after set:", productKeyInput.value);
             showMessage("COA detected.", "success");
             
             if (navigator.vibrate) {
@@ -477,7 +536,40 @@ async function scanFrame() {
             }
             
             stopScanner();
-            textBuffer = [];  // Reset buffer after successful detection
+            candidateSequence = [];
+            return;
+        }
+
+        // Otherwise, retain overlapping five-character candidates.
+        if (data.detected_text) {
+            const frameCandidates =
+                extractCandidateGroups(data.detected_text);
+
+            if (frameCandidates.length > 0) {
+                candidateSequence = mergeCandidateGroups(
+                    candidateSequence,
+                    frameCandidates
+                );
+
+                console.log(
+                    "Candidate key groups:",
+                    candidateSequence
+                );
+
+                if (candidateSequence.length === 5) {
+                    productKeyInput.value =
+                        candidateSequence.join("-");
+                    showMessage("COA detected across frames.", "success");
+
+                    if (navigator.vibrate) {
+                        navigator.vibrate(100);
+                    }
+
+                    stopScanner();
+                    candidateSequence = [];
+                    return;
+                }
+            }
         }
 
     }

@@ -6,6 +6,8 @@ import socket
 import base64
 import io
 
+import numpy as np
+
 from flask import Flask, render_template, request, jsonify
 
 try:
@@ -31,8 +33,8 @@ def get_ocr():
         try:
             ocr = PaddleOCR(
                 use_doc_orientation_classify=True,
-                use_doc_unwarping=True,
-                use_textline_orientation=True,
+                use_doc_unwarping=False,
+                use_textline_orientation=False,
                 enable_mkldnn=False
             )
         except Exception as exc:
@@ -144,7 +146,7 @@ def clean_product_key(product_key):
         ABCDE-FGHIJ-KLMNO-PQRST-UVWXY
     """
 
-    cleaned = re.sub(r"[^A-Za-z0-9]", "", product_key).upper()
+    cleaned = re.sub(r"[^A-Z0-9]", "", product_key).upper()
 
     if len(cleaned) != 25:
         return None
@@ -350,17 +352,9 @@ def api_assign_key():
     })
 
 def preprocess_image(image):
-    """Enhance contrast and sharpness for OCR"""
-    from PIL import ImageEnhance
-    
-    # Increase contrast
-    enhancer = ImageEnhance.Contrast(image)
-    image = enhancer.enhance(2.0)
-    
-    # Increase sharpness
-    enhancer = ImageEnhance.Sharpness(image)
-    image = enhancer.enhance(2.0)
-    
+    """Light preprocessing for speed (heavy enhancement disabled)"""
+    # Minimal processing for speed - just convert to grayscale for better OCR
+    image = image.convert('L').convert('RGB')
     return image
 
 @app.route("/api/scan", methods=["POST"])
@@ -394,10 +388,16 @@ def api_scan():
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         image = preprocess_image(image)
-        temp_file = "_coa_scan.jpg"
-        image.save(temp_file)
 
-        results = ocr_engine.predict(temp_file)
+        # PaddleOCR accepts an ndarray directly. This avoids saving and then
+        # rereading the same JPEG for every frame (and avoids file collisions).
+        image_array = np.asarray(image)
+        results = ocr_engine.predict(
+            image_array,
+            use_doc_orientation_classify=True,
+            use_doc_unwarping=False,
+            use_textline_orientation=False
+        )
 
         detected_text = []
 
@@ -406,6 +406,23 @@ def api_scan():
 
             if callable(result_data):
                 result_data = result_data()
+
+            # PaddleOCR 3.x puts recognized lines here. Reading this field
+            # directly avoids walking model settings, paths, and other result
+            # metadata on every frame.
+            recognized_lines = (
+                result_data.get("res", {}).get("rec_texts")
+                if isinstance(result_data, dict)
+                else None
+            )
+
+            if isinstance(recognized_lines, list):
+                detected_text.extend(
+                    line
+                    for line in recognized_lines
+                    if isinstance(line, str)
+                )
+                continue
 
             def collect_strings(value):
                 if isinstance(value, str):
@@ -421,21 +438,27 @@ def api_scan():
 
         full_text = " ".join(detected_text).upper()
 
+        key_group = r"[B-DF-HJ-NP-TV-Z2346789]{5}"
+        separator = r"[^B-DF-HJ-NP-TV-Z2346789]*"
         match = re.search(
-            r"[A-Z0-9]{5}[-\s]"
-            r"[A-Z0-9]{5}[-\s]"
-            r"[A-Z0-9]{5}[-\s]"
-            r"[A-Z0-9]{5}[-\s]"
-            r"[A-Z0-9]{5}",
+            separator.join(f"({key_group})" for _ in range(5)),
             full_text
         )
+        print("Detected text:", full_text)
+        print("Matched:", match)
 
         if not match:
             return jsonify({
-                "success": False
+                "success": False,
+                # Let the browser combine trustworthy five-character groups
+                # from overlapping partial reads across consecutive frames.
+                "detected_text": full_text
             })
 
-        product_key = clean_product_key(match.group(0))
+        # Build the key from the captured groups only. OCR output can contain
+        # unrelated letters or digits between groups, and cleaning the entire
+        # match would incorrectly include those characters.
+        product_key = "-".join(match.groups())
 
         if product_key is None:
             return jsonify({
@@ -463,6 +486,9 @@ if __name__ == "__main__":
     local_ip = get_local_ip()
     ssl_context = get_ssl_context()
     scheme = "https" if ssl_context else "http"
+
+    print("Loading OCR models...")
+    get_ocr()
 
     print()
     print("COA Manager running.")

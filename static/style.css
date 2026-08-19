@@ -262,11 +262,11 @@ h2 {
 .scan-guide {
     position: absolute;
 
-    left: 4%;
-    top: 32.5%;
+    left: 15%;
+    top: 27.5%;
 
-    width: 92%;
-    height: 35%;
+    width: 70%;
+    height: 45%;
 
     border: 3px solid white;
     border-radius: 8px;
